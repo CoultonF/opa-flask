@@ -1,0 +1,68 @@
+services:
+  flask_service:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      - ./app:/app
+    depends_on:
+      - database
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      # number of uvicorn workers to run inside the opal-server container
+      - UVICORN_NUM_WORKERS=4
+      # the url of the Api bundle server hosting our policy
+      # - you can pass a token if you need to authentication via `POLICY_BUNDLE_SERVER_TOKEN`
+      # - in this example we use nginx server that serve static bundle.tar.gz files without token
+      # - our bundle server is compatible with OPA bundle server
+      # - for more info, see: https://www.openpolicyagent.org/docs/latest/management-bundles/
+      - OPAL_POLICY_BUNDLE_URL=http://api_policy_source_server
+      - OPAL_POLICY_SOURCE_TYPE=API
+      # - the base path for the local git in Opal server
+      - OPAL_POLICY_REPO_CLONE_PATH=~/opal
+      # in this example we will use a polling interval of 30 seconds to check for new policy updates (new bundle files).
+      # however, it is better to utilize a api *webhook* to trigger the server to check for changes only when the bundle server has new bundle.
+      # for more info see: https://docs.opal.ac/tutorials/track_an_api_bundle_server
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
+      # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
+      # after the initial sources are fetched, the client will subscribe only to update notifications sent by the server.
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    depends_on:
+      - broadcast_channel
+  opal_client:
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+    ports:
+      - "7766:7000"
+      - "8181:8181"
+    depends_on:
+      - opal_server
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+  api_policy_source_server:
+    # we use nginx to serve the bundle files
+    image: nginx
+    # expose internal port 80 to localhost 8000
+    ports:
+      - 8000:80
+    # map files into the docker to edit nginx conf and put the bundle files into the container
+    volumes:
+      - ./docker_files/bundle_files:/usr/share/nginx/html
+      - ./docker_files/nginx.conf:/etc/nginx/nginx.conf
