@@ -9,19 +9,21 @@ services:
       - FLASK_ENV=development
     volumes:
       - ./app:/app
-    depends_on:
-      - database
-  broadcast_channel:
+  database:
     image: postgres:alpine
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./docker_files/init.sql:/docker-entrypoint-initdb.d/init.sql
   opal_server:
     image: permitio/opal-server:latest
     environment:
-      # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
-      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      # the broadcast backbone uri used by opal server workers (see comments above for: database)
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@database:5432/postgres
       # number of uvicorn workers to run inside the opal-server container
       - UVICORN_NUM_WORKERS=4
       # the url of the Api bundle server hosting our policy
@@ -40,16 +42,20 @@ services:
       # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
       # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
       # after the initial sources are fetched, the client will subscribe only to update notifications sent by the server.
-      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"postgresql://postgres@database:5432/postgres","config":{"fetcher":"PostgresFetchProvider","query":"SELECT * from city;","connection_params":{"password":"postgres"}},"topics":["policy_data"],"dst_path":"cities"}]}}
+      # - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
     depends_on:
-      - broadcast_channel
+      - database
   opal_client:
-    image: permitio/opal-client:latest
+    build:
+      context: ./opal_client
+      dockerfile: Dockerfile
     environment:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_FETCH_PROVIDER_MODULES=opal_common.fetcher.providers,opal_fetcher_postgres.provider
     ports:
       - "7766:7000"
       - "8181:8181"

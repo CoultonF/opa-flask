@@ -1,4 +1,4 @@
-# flask python image
+#i flask python image
 FROM python:3.11-slim
 # set working directory
 WORKDIR /app
@@ -13,4 +13,4 @@ EXPOSE 5000
 # set environment variable
 ENV FLASK_APP=app.py
 # run flask app
-CMD ["flask"]
+CMD ["sleep", "infinity"]
