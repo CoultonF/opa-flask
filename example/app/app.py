@@ -16,6 +16,7 @@ def api_endpoint(subpath):
     opa_input = {
         "input": {
             "method": request.method,
+            "city_id": 1,
             "path": ['api', *subpath.split('/')],
             "user": request.headers.get('X-User', ''),  # Get user from header
         }

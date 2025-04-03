@@ -15,13 +15,18 @@ allow {
     input.user == "admin"
 }
 allow {
-    print('testing')
     input.method == "GET"
     input.path == ["api", "cities", city_id]
-    print(city_id)
-    
-    # Find matching city
-    print(cities)
-    some city in cities
-    city.id == to_number(city_id)
+    cities[_].id == to_number(city_id)
+}
+
+allow {
+    input.method == "GET"
+    input.path == ["api", "cities", city_id]
+    cities[_].id == to_number(input.city_id)
+}
+
+# Print all city names for debugging
+city_names[name] {
+    name == cities[_].name
 }
